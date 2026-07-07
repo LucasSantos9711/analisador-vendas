@@ -68,7 +68,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Load data with friendly error
+# Load data with friendly error and auto-bootstrap
 try:
     stats = get_summary_stats()
     df_month = get_revenue_by_month()
@@ -80,8 +80,19 @@ try:
     df_weekday = get_revenue_by_weekday()
     insights = generate_insights()
 except FileNotFoundError:
-    st.error("❌ Database not found. Run `python src/ingest.py` first.")
-    st.stop()
+    st.warning("🔄 First run detected — creating database...")
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "ingest.py")],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        st.success("✅ Database created! Loading dashboard...")
+        st.rerun()
+    else:
+        st.error(f"Failed to create database:\n```\n{result.stderr}\n```")
+        st.stop()
 
 # Sidebar
 st.sidebar.header("🔍 Filters")
