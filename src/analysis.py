@@ -3,6 +3,7 @@ Sales Analytics Module
 
 Provides functions to analyze sales data stored in SQLite.
 Each function returns a DataFrame or dict, ready to use in dashboards.
+Supports optional filters for region, category, and date range.
 
 Usage:
     from src.analysis import get_summary_stats, get_revenue_by_month
@@ -16,8 +17,6 @@ BASE_DIR = Path(__file__).parent.parent
 DB_FILE = BASE_DIR / "data" / "vendas.db"
 
 
-# ---------- Connection ----------
-
 def get_connection():
     """Open SQLite connection. Raises if DB doesn't exist yet."""
     if not DB_FILE.exists():
@@ -28,12 +27,27 @@ def get_connection():
     return sqlite3.connect(DB_FILE)
 
 
-# ---------- Core analytics ----------
+def _build_where(region=None, category=None, date_from=None, date_to=None):
+    """Build WHERE clause from optional filters."""
+    clauses = []
+    if region:
+        clauses.append(f"regiao = '{region}'")
+    if category:
+        clauses.append(f"categoria = '{category}'")
+    if date_from:
+        clauses.append(f"data_venda >= '{date_from}'")
+    if date_to:
+        clauses.append(f"data_venda <= '{date_to}'")
+    if clauses:
+        return "WHERE " + " AND ".join(clauses)
+    return ""
 
-def get_summary_stats() -> dict:
+
+def get_summary_stats(region=None, category=None, date_from=None, date_to=None):
     """Overall KPIs of the sales dataset."""
-    query = """
-        SELECT 
+    where = _build_where(region, category, date_from, date_to)
+    query = f"""
+        SELECT
             COUNT(*)                              AS total_vendas,
             SUM(valor_total)                      AS receita_total,
             AVG(valor_total)                      AS ticket_medio,
@@ -43,20 +57,23 @@ def get_summary_stats() -> dict:
             MIN(data_venda)                       AS primeira_venda,
             MAX(data_venda)                       AS ultima_venda
         FROM vendas
+        {where}
     """
     with get_connection() as conn:
         row = pd.read_sql_query(query, conn).iloc[0]
     return row.to_dict()
 
 
-def get_revenue_by_month() -> pd.DataFrame:
+def get_revenue_by_month(region=None, category=None, date_from=None, date_to=None):
     """Monthly revenue trend."""
-    query = """
-        SELECT 
+    where = _build_where(region, category, date_from, date_to)
+    query = f"""
+        SELECT
             strftime('%Y-%m', data_venda)         AS mes,
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY mes
         ORDER BY mes
     """
@@ -66,14 +83,16 @@ def get_revenue_by_month() -> pd.DataFrame:
     return df
 
 
-def get_revenue_by_region() -> pd.DataFrame:
+def get_revenue_by_region(region=None, category=None, date_from=None, date_to=None):
     """Revenue by Brazilian region."""
-    query = """
-        SELECT 
+    where = _build_where(region, category, date_from, date_to)
+    query = f"""
+        SELECT
             regiao,
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY regiao
         ORDER BY receita DESC
     """
@@ -81,14 +100,16 @@ def get_revenue_by_region() -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-def get_revenue_by_category() -> pd.DataFrame:
+def get_revenue_by_category(region=None, category=None, date_from=None, date_to=None):
     """Revenue by product category."""
-    query = """
-        SELECT 
+    where = _build_where(region, category, date_from, date_to)
+    query = f"""
+        SELECT
             categoria,
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY categoria
         ORDER BY receita DESC
     """
@@ -96,15 +117,17 @@ def get_revenue_by_category() -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-def get_top_products(n: int = 10) -> pd.DataFrame:
+def get_top_products(n=10, region=None, category=None, date_from=None, date_to=None):
     """Top N products by revenue."""
+    where = _build_where(region, category, date_from, date_to)
     query = f"""
-        SELECT 
+        SELECT
             produto,
             categoria,
             SUM(valor_total)                      AS receita,
             SUM(quantidade)                       AS quantidade
         FROM vendas
+        {where}
         GROUP BY produto
         ORDER BY receita DESC
         LIMIT {int(n)}
@@ -113,14 +136,16 @@ def get_top_products(n: int = 10) -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-def get_top_sellers(n: int = 10) -> pd.DataFrame:
+def get_top_sellers(n=10, region=None, category=None, date_from=None, date_to=None):
     """Top N sellers by revenue."""
+    where = _build_where(region, category, date_from, date_to)
     query = f"""
-        SELECT 
+        SELECT
             vendedor,
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY vendedor
         ORDER BY receita DESC
         LIMIT {int(n)}
@@ -129,14 +154,16 @@ def get_top_sellers(n: int = 10) -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-def get_top_customers(n: int = 10) -> pd.DataFrame:
+def get_top_customers(n=10, region=None, category=None, date_from=None, date_to=None):
     """Top N customers by revenue."""
+    where = _build_where(region, category, date_from, date_to)
     query = f"""
-        SELECT 
+        SELECT
             cliente,
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY cliente
         ORDER BY receita DESC
         LIMIT {int(n)}
@@ -145,10 +172,11 @@ def get_top_customers(n: int = 10) -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-def get_revenue_by_weekday() -> pd.DataFrame:
+def get_revenue_by_weekday(region=None, category=None, date_from=None, date_to=None):
     """Revenue distribution by day of week."""
-    query = """
-        SELECT 
+    where = _build_where(region, category, date_from, date_to)
+    query = f"""
+        SELECT
             CASE strftime('%w', data_venda)
                 WHEN '0' THEN 'Domingo'
                 WHEN '1' THEN 'Segunda'
@@ -162,6 +190,7 @@ def get_revenue_by_weekday() -> pd.DataFrame:
             SUM(valor_total)                      AS receita,
             COUNT(*)                              AS num_vendas
         FROM vendas
+        {where}
         GROUP BY dia_semana, dia_num
         ORDER BY dia_num
     """
@@ -169,81 +198,75 @@ def get_revenue_by_weekday() -> pd.DataFrame:
         return pd.read_sql_query(query, conn)
 
 
-# ---------- Auto insights ----------
-
-def generate_insights() -> list:
+def generate_insights(region=None, category=None, date_from=None, date_to=None):
     """Generate human-readable business insights from the data."""
-    stats = get_summary_stats()
-    by_region = get_revenue_by_region()
-    by_category = get_revenue_by_category()
-    by_month = get_revenue_by_month()
-    by_day = get_revenue_by_weekday()
+    stats = get_summary_stats(region, category, date_from, date_to)
+    by_region = get_revenue_by_region(region, category, date_from, date_to)
+    by_category = get_revenue_by_category(region, category, date_from, date_to)
+    by_month = get_revenue_by_month(region, category, date_from, date_to)
+    by_day = get_revenue_by_weekday(region, category, date_from, date_to)
 
     insights = []
 
-    # Total revenue
     insights.append(
-        f"📊 Receita total: R$ {stats['receita_total']:,.2f} "
-        f"em {stats['total_vendas']} vendas"
+        f"📊 **Receita Total:** R$ {stats['receita_total']:,.2f} "
+        f"em {stats['total_vendas']:,} vendas realizadas"
     )
 
-    # Top region
-    top = by_region.iloc[0]
-    pct = (top["receita"] / stats["receita_total"]) * 100
     insights.append(
-        f"🌎 Região líder: {top['regiao']} com {pct:.1f}% da receita total"
+        f"💰 **Ticket Médio:** R$ {stats['ticket_medio']:,.2f} por venda"
     )
 
-    # Top category
-    top_cat = by_category.iloc[0]
-    pct = (top_cat["receita"] / stats["receita_total"]) * 100
-    insights.append(
-        f"📦 Categoria líder: {top_cat['categoria']} com {pct:.1f}% da receita"
-    )
+    if not by_region.empty:
+        top = by_region.iloc[0]
+        pct = (top["receita"] / stats["receita_total"]) * 100
+        insights.append(
+            f"🌎 **Região Líder:** {top['regiao']} domina com "
+            f"{pct:.1f}% da receita (R$ {top['receita']:,.2f})"
+        )
 
-    # Month over month
+    if not by_category.empty:
+        top_cat = by_category.iloc[0]
+        pct = (top_cat["receita"] / stats["receita_total"]) * 100
+        insights.append(
+            f"📦 **Categoria Top:** {top_cat['categoria']} "
+            f"representa {pct:.1f}% do faturamento"
+        )
+
     if len(by_month) >= 2:
         last = by_month.iloc[-1]["receita"]
         prev = by_month.iloc[-2]["receita"]
         change = ((last - prev) / prev) * 100
-        emoji = "📈" if change > 0 else "📉"
-        last_label = by_month.iloc[-1]["mes"].strftime("%Y-%m")
-        insights.append(f"{emoji} {last_label}: variação de {change:+.1f}% vs mês anterior")
+        if change > 5:
+            emoji = "🚀"
+            label = "crescimento"
+        elif change > 0:
+            emoji = "📈"
+            label = "leve alta"
+        elif change > -5:
+            emoji = "📉"
+            label = "leve queda"
+        else:
+            emoji = "⚠️"
+            label = "queda significativa"
+        last_label = by_month.iloc[-1]["mes"].strftime("%B/%Y")
+        insights.append(
+            f"{emoji} **Tendência:** {last_label} teve {label} de "
+            f"{change:+.1f}% vs mês anterior"
+        )
 
-    # Best weekday
-    best_day = by_day.loc[by_day["receita"].idxmax()]
-    insights.append(f"📅 Melhor dia da semana: {best_day['dia_semana']}")
+    if not by_day.empty:
+        best_day = by_day.loc[by_day["receita"].idxmax()]
+        worst_day = by_day.loc[by_day["receita"].idxmin()]
+        diff = ((best_day["receita"] - worst_day["receita"]) / worst_day["receita"]) * 100
+        insights.append(
+            f"📅 **Melhor Dia:** {best_day['dia_semana']} vende "
+            f"{diff:.0f}% a mais que {worst_day['dia_semana']}"
+        )
 
-    # Average ticket
-    insights.append(f"💰 Ticket médio: R$ {stats['ticket_medio']:,.2f}")
+    insights.append(
+        f"👥 **Base de Clientes:** {stats['total_clientes']} clientes únicos "
+        f"atendidos por {stats['total_vendedores']} vendedores"
+    )
 
     return insights
-
-
-# ---------- CLI test ----------
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("ANALISE DE VENDAS")
-    print("=" * 60)
-
-    stats = get_summary_stats()
-    print("\n📊 RESUMO GERAL")
-    print(f"   Vendas:        {stats['total_vendas']}")
-    print(f"   Receita total: R$ {stats['receita_total']:,.2f}")
-    print(f"   Ticket medio:  R$ {stats['ticket_medio']:,.2f}")
-    print(f"   Clientes:      {stats['total_clientes']}")
-    print(f"   Periodo:       {stats['primeira_venda']} -> {stats['ultima_venda']}")
-
-    print("\n🌎 POR REGIAO")
-    print(get_revenue_by_region().to_string(index=False))
-
-    print("\n📦 POR CATEGORIA")
-    print(get_revenue_by_category().to_string(index=False))
-
-    print("\n🏆 TOP 5 PRODUTOS")
-    print(get_top_products(5).to_string(index=False))
-
-    print("\n💡 INSIGHTS AUTOMATICOS")
-    for line in generate_insights():
-        print(f"   {line}")
